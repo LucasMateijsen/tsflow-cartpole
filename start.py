@@ -1,89 +1,90 @@
 import tensorflow as tf
 import numpy as np
 
+
 class PolicyNetwork:
-    def __init__(self, hiddenLayerSizesOrModel):
-        if isinstance(hiddenLayerSizesOrModel, tf.keras.Model):
-            self.model = hiddenLayerSizesOrModel
+    def __init__(self, hidden_layer_sizes_or_model):
+        self.current_actions_ = None
+        if isinstance(hidden_layer_sizes_or_model, tf.keras.Model):
+            self.model = hidden_layer_sizes_or_model
         else:
-            self.createModel(hiddenLayerSizesOrModel)
+            self.create_model(hidden_layer_sizes_or_model)
 
-
-    def createModel(self, hiddenLayerSizes):
-        if not isinstance(hiddenLayerSizes, list):
-            hiddenLayerSizes = [hiddenLayerSizes]
+    def create_model(self, hidden_layer_sizes):
+        if not isinstance(hidden_layer_sizes, list):
+            hidden_layer_sizes = [hidden_layer_sizes]
         self.model = tf.keras.Sequential()
-        for i, hiddenLayerSize in hiddenLayerSizes:
+        for i, hiddenLayerSize in hidden_layer_sizes:
             tf.layers.Dense(
-                units = hiddenLayerSize,
-                activation = "elu",
-                inputShape = [4] if i == 0 else None
+                units=hiddenLayerSize,
+                activation="elu",
+                inputShape=[4] if i == 0 else None
             )
         self.model.add(tf.layers.Dense(
-            units = 1
+            units=1
         ))
 
-    def train(self, cartPoleSystem, optimizer, discountRate, numGames, maxStepsPerGame):
-        allGradients = []
-        allRewards = []
-        gameSteps = []
+    def train(self, cart_pole_system, optimizer, discount_rate, num_games, max_steps_per_game):
+        all_gradients = []
+        all_rewards = []
+        game_steps = []
         # onGameEnd(0, numGames)
 
-        for i, numGame in numGames:
-            cartPoleSystem.setRandomState()
-            gameRewards = []
-            gameGradients = []
-            for j, maxStepPerGame in maxStepsPerGame:
+        for i, _ in num_games:
+            cart_pole_system.setRandomState()
+            game_rewards = []
+            game_gradients = []
+            for j, _ in max_steps_per_game:
 
                 # tidy verhaal
-                inputTensor = cartPoleSystem.getStateTensor()
-                gradients = self.getGradientsAndSaveActions(inputTensor).grads
+                input_tensor = cart_pole_system.get_state_tensor()
+                gradients = self.get_gradients_and_save_actions(input_tensor).grads
 
-                self.pushGradients(gameGradients, gradients)
-                action = self.currentActions_[0]
-                isDone = cartPoleSystem.update(action)
-                
+                self.push_gradients(game_gradients, gradients)
+                action = self.current_actions_[0]
+                is_done = cart_pole_system.update(action)
+
                 # maybeRenderDuringTraining(cartPoleSystem)
 
-                if isDone:
-                    gameRewards.append(0)
+                if is_done:
+                    game_rewards.append(0)
                 else:
-                    gameRewards.append(1)
-            #onGameEnd(i + 1, numGames)
-            gameSteps.append(gameRewards.count())
-            self.pushGradients(allGradients, gameGradients)
-            allRewards.append(gameRewards)
+                    game_rewards.append(1)
+            # onGameEnd(i + 1, numGames)
+            game_steps.append(len(game_rewards))
+            self.push_gradients(all_gradients, game_gradients)
+            all_rewards.append(game_rewards)
             # tf.nextFrame();
-        normalizedRewards = discountAndNormalizeRewards(allRewards, discountRate)
-        optimizer.applyGradients(scaleAndAverageGradients(allGradients, normalizedRewards))
+        normalized_rewards = discount_and_normalize_rewards(all_rewards, discount_rate)
+        optimizer.applyGradients(scale_and_average_gradients(all_gradients, normalized_rewards))
         # tf.dispose(allGradients)
-        
-        return gameSteps
 
-    def getGradientsAndSaveActions(self, inputTensor):
-        [logits, actions] = self.getLogitsAndActions(inputTensor)
-        self.currentActions_ = actions.dataSync()
-        labels = tf.subtract(1, np.array(self.currentActions_, actions.shape))
+        return game_steps
+
+    def get_gradients_and_save_actions(self, input_tensor):
+        [logits, actions] = self.get_logits_and_actions(input_tensor)
+        self.current_actions_ = actions.dataSync()
+        labels = tf.subtract(1, np.array(self.current_actions_, actions.shape))
         gradients = tf.losses.sigmoid_cross_entropy(labels, logits).asScalar()
 
         tf.variableGrads(gradients)
 
+    def get_current_actions(self):
+        return self.current_actions_
 
-    def getCurrentActions(self):
-        return self.currentActions_
-
-    def getLogitsAndActions(self, inputs):
+    def get_logits_and_actions(self, inputs):
         logits = self.model.predict(inputs)
 
-        leftProb = tf.sigmoid(logits)
-        leftRightProbs = tf.concat([leftProb, tf.subtract(1, leftProb)], 1)
-        actions = tf.multinomial(leftRightProbs, 1, None, True)
+        left_prob = tf.sigmoid(logits)
+        left_right_prob = tf.concat([left_prob, tf.subtract(1, left_prob)], 1)
+        actions = tf.multinomial(left_right_prob, 1, None, True)
         return [logits, actions]
 
-    def getActions(self, inputs):
-        return self.getLogitsAndActions(inputs)[1].dataSync()
+    def get_actions(self, inputs):
+        return self.get_logits_and_actions(inputs)[1].dataSync()
 
-    def pushGradients(self, record, gradients):
+    @staticmethod
+    def push_gradients(record, gradients):
         for key in gradients:
             if key in record:
                 record[key].append(gradients[key])
@@ -91,48 +92,48 @@ class PolicyNetwork:
                 record[key] = [gradients[key]]
 
 
-
-def discountRewards(rewards, discountRate):
-    discountedBuffer = tf.buffer([rewards.count()])
+def discount_rewards(rewards, discount_rate):
+    discounted_buffer = tf.TensorArray([len(rewards)])
     prev = 0
-    reversedRewards = rewards.reverse()
+    reversed_rewards = rewards.reverse()
 
-    for i, reward in reversedRewards:
-        index = reversedRewards.count() - 1 - i
-        current = discountRate * prev + reward
-        discountedBuffer.set(current, index)
+    for i, reward in reversed_rewards:
+        index = len(reversed_rewards) - 1 - i
+        current = discount_rate * prev + reward
+        discounted_buffer.set(current, index)
         prev = current
 
-    return discountedBuffer.toTensor()
+    return discounted_buffer.toTensor()
 
-def discountAndNormalizeRewards(rewardSequences, discountRate):
+
+def discount_and_normalize_rewards(reward_sequences, discount_rate):
     discounted = []
-    for sequence in rewardSequences:
-        discounted.append(discountRewards(sequence, discountRate))
+    for sequence in reward_sequences:
+        discounted.append(discount_rewards(sequence, discount_rate))
     # Assumption
     concatenated = tf.concat(discounted, 0)
     mean = tf.metrics.mean(concatenated)
 
-    # subst = 
-    cqrroot = tf.square(concatenated.subtract(mean))
-    mn = tf.metrics.mean(cqrroot)
-    std = tf.sqrt(mn)
-    
+    std = tf.sqrt(tf.metrics.mean(tf.square(concatenated.subtract(mean))))
+
     normalized = list(map(lambda rs: rs.subtract(mean).divide(std), discounted))
     return normalized
 
-def scaleAndAverageGradients(allGradients, normalizedRewards):
+
+def scale_and_average_gradients(all_gradients, normalized_rewards):
     gradients = {}
-    for varName in allGradients:
-        varGradients = list(map(lambda varGameGradients: tf.stack(varGameGradients), allGradients[varName]))
-        expandedDims = []
-        for i, rnk in varGradients[0].rank - 1:
-            expandedDims.append(1)
+    for varName in all_gradients:
+        var_gradients = list(map(lambda var_game_gradients: tf.stack(var_game_gradients), all_gradients[varName]))
+        expanded_dims = []
+        for i, _ in var_gradients[0].rank - 1:
+            expanded_dims.append(1)
 
-        reshapedNormalizedRewards = list(map(lambda rs: rs.reshape(rs.shape.concat(expandedDims))), normalizedRewards)
-        for g, varGradient in varGradients:
-            varGradients[g] = varGradients[g].mul(reshapedNormalizedRewards[g])
+        reshaped_normalized_rewards = \
+            list(map(lambda rs: rs.reshape(rs.shape.concat(expanded_dims)), normalized_rewards))
 
-        gradients[varName] = tf.metrics.mean(tf.concat(varGradients, 0), 0)
-    
+        for g, varGradient in var_gradients:
+            var_gradients[g] = var_gradients[g].mul(reshaped_normalized_rewards[g])
+
+        gradients[varName] = tf.metrics.mean(tf.concat(var_gradients, 0), 0)
+
     return gradients
