@@ -1,7 +1,7 @@
-import tensorflow as tf
 import math as math
 import random as rand
 import numpy as np
+
 
 class CartPole:
 
@@ -18,37 +18,40 @@ class CartPole:
         self.tau = 0.02
 
         self.xThreshold = 2.4
-        self.thetaThreshold = 12 / 360 * 2 * math.pi
+        self.theta_threshold = 12 / 360 * 2 * math.pi
 
-        self.setRandomState()
+        self.x, self.x_dot, self.theta, self.theta_dot = 0, 0, 0, 0
+        self.set_random_state()
 
-    def setRandomState(self):
+    def set_random_state(self):
         self.x = rand.random() - 0.5
-        self.xDot = (rand.random() - 0.5) * 1
+        self.x_dot = (rand.random() - 0.5) * 1
         self.theta = (rand.random() - 0.5) * 2 * (6 / 360 * 2 * math.pi)
-        self.thetaDot = (rand.random() - 0.5) * 0.5
+        self.theta_dot = (rand.random() - 0.5) * 0.5
 
-    def getStateTensor(self):
-        return np.array([[self.x, self.xDot, self.theta, self.thetaDot]])
+    def get_state_tensor(self):
+        return np.array([[self.x, self.x_dot, self.theta, self.theta_dot]])
 
     def update(self, action):
         force = -self.forceMag
         if action > 0:
             force = self.forceMag
 
-        cosTheta = math.cos(self.theta)
-        sinTheta = math.sin(self.theta)
+        cos_theta = math.cos(self.theta)
+        sin_theta = math.sin(self.theta)
 
-        temp = (force + self.poleMoment * self.thetaDot * self.thetaDot * sinTheta) / self.totalMass
-        thetaAcc = (self.gravity * sinTheta - cosTheta * temp) / (self.length * (4 / 3 - self.massPole * cosTheta * cosTheta / self.totalMass))
-        xAcc = temp - self.poleMoment * thetaAcc * cosTheta / self.totalMass
-        
-        self.x += self.tau * self.xDot
-        self.xDot += self.tau * xAcc
-        self.theta += self.tau * self.thetaDot
-        self.thetaDot += self.tau * thetaAcc
+        temp = (force + self.poleMoment * self.theta_dot * self.theta_dot * sin_theta) / self.totalMass
+        theta_acc = (self.gravity * sin_theta - cos_theta * temp) / (
+                    self.length * (4 / 3 - self.massPole * cos_theta * cos_theta / self.totalMass))
+        x_acc = temp - self.poleMoment * theta_acc * cos_theta / self.totalMass
 
-        return self.isDone()
+        self.x += self.tau * self.x_dot
+        self.x_dot += self.tau * x_acc
+        self.theta += self.tau * self.theta_dot
+        self.theta_dot += self.tau * theta_acc
 
-    def isDone(self):
-        return self.x < -self.xThreshold or self.x > self.xThreshold or self.theta < -self.thetaThreshold or self.theta > self.thetaThreshold
+        return self.is_done()
+
+    def is_done(self):
+        return self.x < -self.xThreshold or self.x > self.xThreshold or \
+               self.theta < -self.theta_threshold or self.theta > self.theta_threshold
